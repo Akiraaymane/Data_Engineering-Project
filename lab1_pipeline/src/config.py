@@ -6,7 +6,7 @@ RAW_DIR = os.path.join(BASE_DIR, "data", "raw")
 PROCESSED_DIR = os.path.join(BASE_DIR, "data", "processed")
 
 # Fichiers d'entrée
-APPS_INPUT = "apps_metadata.json"
+APPS_INPUT = "apps_metadata.jsonl"
 REVIEWS_INPUT = "apps_reviews.jsonl"
 
 # Fichiers de sortie

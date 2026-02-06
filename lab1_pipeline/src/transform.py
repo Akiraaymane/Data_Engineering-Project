@@ -72,7 +72,9 @@ def run(reviews_input=None, apps_input=None):
     
     # 1. Chargement des Apps Metadata
     logger.info(f"Chargement des apps depuis {raw_apps_path}")
-    if raw_apps_path.endswith('.json'):
+    if raw_apps_path.endswith('.jsonl'):
+        df_apps = pd.read_json(raw_apps_path, lines=True)
+    elif raw_apps_path.endswith('.json'):
         with open(raw_apps_path, 'r', encoding='utf-8') as f:
             apps_data = json.load(f)
         df_apps = pd.DataFrame(apps_data)

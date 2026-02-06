@@ -50,7 +50,48 @@ def run():
     plt.savefig(os.path.join(config.PROCESSED_DIR, "dashboard_scatter.png"))
     plt.close()
     
-    logger.info(f"Dashboard généré. Images sauvegardées dans {config.PROCESSED_DIR}")
+    # 4. Génération du fichier HTML
+    html_content = f"""
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>App Reviews Dashboard</title>
+        <style>
+            body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 20px; background-color: #f4f7f6; }}
+            h1 {{ color: #333; text-align: center; }}
+            .container {{ display: flex; flex-wrap: wrap; justify-content: center; gap: 20px; }}
+            .card {{ background: white; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); padding: 15px; width: 45%; min-width: 400px; }}
+            img {{ max-width: 100%; border-radius: 4px; }}
+            .full-width {{ width: 92%; }}
+        </style>
+    </head>
+    <body>
+        <h1>Analyse des Avis Applications AI</h1>
+        <div class="container">
+            <div class="card">
+                <h3>Scores Moyens</h3>
+                <img src="dashboard_scores.png" alt="Average Scores">
+            </div>
+            <div class="card">
+                <h3>Distribution du Sentiment</h3>
+                <img src="dashboard_sentiment.png" alt="Sentiment Distribution">
+            </div>
+            <div class="card full-width">
+                <h3>Avis : Score vs Likes</h3>
+                <img src="dashboard_scatter.png" alt="Score vs Likes">
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+    
+    html_path = os.path.join(config.PROCESSED_DIR, "dashboard.html")
+    with open(html_path, "w", encoding="utf-8") as f:
+        f.write(html_content)
+        
+    logger.info(f"Dashboard généré. Images et HTML sauvegardés dans {config.PROCESSED_DIR}")
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
