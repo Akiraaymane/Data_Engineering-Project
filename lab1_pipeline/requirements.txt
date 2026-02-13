@@ -1,6 +1,6 @@
 pandas
 numpy
 python-dateutil
-matplotlib
 google-play-scraper
 plotly
+

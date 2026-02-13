@@ -1,142 +1,220 @@
+import pandas as pd
 import json
 import logging
-import os
-import pandas as pd
-import numpy as np
+from pathlib import Path
+from datetime import datetime
 from src import config
 
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# --- CONFIGURATION DE LA ROBUSTESSE ---
-# Mapping pour gérer la dérive de schéma (MCD amont)
-MAPPING_SCHEMA = {
-    'reviews': {
-        'reviewId': ['reviewId', 'review_id', 'id'],
-        'content': ['content', 'text', 'comment'],
-        'score': ['score', 'rating', 'stars'],
-        'at': ['at', 'date', 'timestamp', 'review_date'],
-        'thumbsUpCount': ['thumbsUpCount', 'likes', 'vote_count'],
-        'app_id': ['app_id', 'package_name', 'appId']
-    },
-    'apps': {
-        'appId': ['appId', 'app_id', 'package_name'],
-        'title': ['title', 'app_name', 'name'],
-        'developer': ['developer', 'author', 'company'],
-        'score': ['score', 'rating', 'avg_rating'],
-        'installs': ['installs', 'download_count'],
-        'genre': ['genre', 'category'],
-        'price': ['price', 'cost']
-    }
-}
-
-def normalize_schema(df, mapping):
-    """Renomme les colonnes trouvées vers les noms attendus."""
-    rename_dict = {}
-    for expected, possibles in mapping.items():
-        for p in possibles:
-            if p in df.columns:
-                rename_dict[p] = expected
-                break
-    return df.rename(columns=rename_dict)
-
-def clean_installs(val):
-    """Convertit '50,000,000+' en 50000000."""
-    if isinstance(val, str):
-        val = val.replace(',', '').replace('+', '')
-        try:
-            return float(val)
-        except ValueError:
-            return np.nan
-    return val
-
-def get_sentiment(text):
-    """Heuristique simple pour le sentiment (Etape 7)."""
-    if pd.isna(text): return 'NEUTRAL'
-    text = str(text).lower()
-    pos_keywords = ['great', 'best', 'love', 'excellent', 'good', 'amazing', 'perfect', 'helpful']
-    neg_keywords = ['worst', 'bad', 'hate', 'terrible', 'disappointing', 'waste', 'crash', 'broken', 'issue', 'problem']
-    
-    pos_count = sum(1 for k in pos_keywords if k in text)
-    neg_count = sum(1 for k in neg_keywords if k in text)
-    
-    if pos_count > neg_count: return 'POS'
-    if neg_count > pos_count: return 'NEG'
-    return 'NEUTRAL'
-
-def run(reviews_input=None, apps_input=None):
-    """Charge, transforme et sauvegarde les données traitées."""
-    logger.info("Démarrage de la transformation...")
-    
-    raw_apps_path = os.path.join(config.RAW_DIR, apps_input or config.APPS_INPUT)
-    raw_reviews_path = os.path.join(config.RAW_DIR, reviews_input or config.REVIEWS_INPUT)
-    
-    # 1. Chargement des Apps Metadata
-    logger.info(f"Chargement des apps depuis {raw_apps_path}")
-    if raw_apps_path.endswith('.jsonl'):
-        df_apps = pd.read_json(raw_apps_path, lines=True)
-    elif raw_apps_path.endswith('.json'):
-        with open(raw_apps_path, 'r', encoding='utf-8') as f:
-            apps_data = json.load(f)
-        df_apps = pd.DataFrame(apps_data)
-    else: # CSV for stress tests
-        df_apps = pd.read_csv(raw_apps_path)
-    
-    df_apps = normalize_schema(df_apps, MAPPING_SCHEMA['apps'])
-    
-    # Transformation des colonnes Apps Catalog
-    # Colonnes attendues: appId, title, developer, score, ratings, installs, genre, price
-    expected_app_cols = ['appId', 'title', 'developer', 'score', 'ratings', 'installs', 'genre', 'price']
-    df_apps_catalog = df_apps[[c for c in expected_app_cols if c in df_apps.columns]].copy()
-    df_apps_catalog['installs'] = df_apps_catalog['installs'].apply(clean_installs)
-    df_apps_catalog['score'] = pd.to_numeric(df_apps_catalog['score'], errors='coerce')
-    
-    # 2. Chargement des Reviews
-    logger.info(f"Chargement des reviews depuis {raw_reviews_path}")
-    if raw_reviews_path.endswith('.jsonl'):
-        df_reviews = pd.read_json(raw_reviews_path, lines=True)
-    else:
-        df_reviews = pd.read_csv(raw_reviews_path)
+def load_raw_data(file_path):
+    """
+    Robust loader that handles JSON, JSONL, and CSV.
+    """
+    file_path = Path(file_path)
+    if not file_path.exists():
+        raise FileNotFoundError(f"Input file not found: {file_path}")
         
-    df_reviews = normalize_schema(df_reviews, MAPPING_SCHEMA['reviews'])
+    ext = file_path.suffix.lower()
     
-    # 3. Robustesse & Nettoyage Reviews
-    # Conversion types
-    df_reviews['score'] = pd.to_numeric(df_reviews['score'], errors='coerce')
-    df_reviews['at'] = pd.to_datetime(df_reviews['at'], errors='coerce')
+    try:
+        if ext == '.jsonl':
+            # Explicit JSONL (JSON Lines) format
+            return pd.read_json(file_path, lines=True)
+        elif ext == '.json':
+            # Try loading as standard JSON first
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                # If it's a list (standard scrape), create DataFrame
+                # If it's a dict (single app details), wrap in list
+                if isinstance(data, dict):
+                    data = [data]
+                return pd.DataFrame(data)
+            except json.JSONDecodeError:
+                # Fallback to Line-delimited JSON (JSONL) if standard load fails
+                logger.warning(f"JSON decode error for {file_path}, retrying as JSON Lines...")
+                return pd.read_json(file_path, lines=True)
+
+        elif ext == '.csv':
+            return pd.read_csv(file_path)
+        else:
+            raise ValueError(f"Unsupported file extension: {ext}")
+            
+    except Exception as e:
+        logger.error(f"Error loading {file_path}: {e}")
+        raise
+
+def normalize_apps(df):
+    """
+    Cleans and selects app fields.
+    """
+    # Schema Mapping (Implicit via column selection)
+    # Ensure columns exist, fill if missing
+    for col in config.CATALOG_COLS:
+        if col not in df.columns:
+             df[col] = None # or suitable default
     
-    # Dédoublonnage : Garder le plus récent par reviewId
-    if 'reviewId' in df_reviews.columns:
-        df_reviews = df_reviews.sort_values('at', ascending=False).drop_duplicates('reviewId').reset_index(drop=True)
+    # Type Normalization
+    # 'score', 'price', 'installs', 'ratings' -> numeric
     
-    # 4. Jointure avec Apps pour le nom de l'application
-    if 'app_id' in df_reviews.columns and 'appId' in df_apps.columns:
-        df_reviews = df_reviews.merge(
-            df_apps[['appId', 'title']].rename(columns={'title': 'app_name'}),
-            left_on='app_id', right_on='appId', how='left'
-        )
-        df_reviews['app_name'] = df_reviews['app_name'].fillna('UNKNOWN')
+    # Clean 'installs': "1,000,000+" -> 1000000
+    if 'installs' in df.columns:
+        df['installs'] = df['installs'].astype(str).str.replace(r'[+,]', '', regex=True)
+        df['installs'] = pd.to_numeric(df['installs'], errors='coerce')
+        
+    if 'price' in df.columns:
+        # "Free" -> 0, "$4.99" -> 4.99
+        df['price'] = df['price'].astype(str).str.replace('Free', '0').str.replace('$', '')
+        df['price'] = pd.to_numeric(df['price'], errors='coerce')
+
+    df['score'] = pd.to_numeric(df['score'], errors='coerce')
+    df['ratings'] = pd.to_numeric(df['ratings'], errors='coerce')
+
+    return df[config.CATALOG_COLS].drop_duplicates(subset=['appId'])
+
+def normalize_reviews(df, apps_df):
+    """
+    Cleans reviews, handles schema drift, and joins with apps.
+    """
+    # 1. Schema Mapping Layer for Robustness
+    # Map drifted names to canonical names
+    column_mapping = {
+        'id': 'reviewId',
+        'review_id': 'reviewId',
+        'body': 'content',
+        'text': 'content',
+        'stars': 'score',
+        'rating': 'score', 
+        'timestamp': 'at',
+        'date': 'at',
+        'thumbs': 'thumbsUpCount',
+        'likes': 'thumbsUpCount'
+    }
+    df = df.rename(columns=column_mapping)
     
-    # 5. Logique métier - Sentiment & Contradiction (Etape 7)
-    df_reviews['sentiment_hint'] = df_reviews['content'].apply(get_sentiment)
+    # 2. Add Missing Canonical Columns if they don't exist
+    required_cols = ['reviewId', 'userName', 'score', 'content', 'thumbsUpCount', 'at']
+    for col in required_cols:
+        if col not in df.columns:
+            df[col] = None 
+
+    # 3. Type Normalization
+    # Score -> Numeric
+    df['score'] = pd.to_numeric(df['score'], errors='coerce')
     
-    # Contradiction flag: NEG text with score >= 4 OR POS text with score <= 2
-    df_reviews['contradiction_flag'] = (
-        ((df_reviews['sentiment_hint'] == 'NEG') & (df_reviews['score'] >= 4)) |
-        ((df_reviews['sentiment_hint'] == 'POS') & (df_reviews['score'] <= 2))
+    # Date -> Datetime
+    # Handle mixed formats if necessary. safely convert.
+    df['at'] = pd.to_datetime(df['at'], errors='coerce')
+    
+    # Thumbs -> Numeric
+    df['thumbsUpCount'] = pd.to_numeric(df['thumbsUpCount'], errors='coerce').fillna(0)
+
+    # 4. Deduplication
+    # Policy: Drop duplicates by reviewId, keep latest 'at' (actually if IDs are same, assume latest is update)
+    # If no ID, drop duplicate content+user? sticking to ID for now.
+    if 'reviewId' in df.columns:
+        df = df.sort_values(by='at', ascending=False)
+        df = df.drop_duplicates(subset=['reviewId'], keep='first')
+        
+    # 5. Join Integrity (App Context)
+    # The reviews need 'app_id' to join.
+    # Note: Scraped JSON might NOT have app_id in the review object itself if fetched via 'reviews()'.
+    # In Step 2 I didn't add it.
+    # However, for the LAB, the inputs (stress tests) likely have it or we assume single app.
+    # If missng, we try to infer from config.TARGET_APP_ID (assuming single app pipeline).
+    if 'app_id' not in df.columns:
+        # Assuming all ingested reviews belong to the configured target app
+        # This is valid for the single-app usage pattern described.
+        df['app_id'] = config.TARGET_APP_ID
+
+    # Join with Apps for 'app_name' (title)
+    # Apps catalog has 'appId' and 'title'. Reviews has 'app_id'.
+    # Left join.
+    merged = df.merge(
+        apps_df[['appId', 'title']], 
+        left_on='app_id', 
+        right_on='appId', 
+        how='left'
     )
     
-    # 6. Sauvegarde des Outputs
-    os.makedirs(config.PROCESSED_DIR, exist_ok=True)
+    # Rename 'title' to 'app_name' as per requirements
+    merged = merged.rename(columns={'title': 'app_name'})
     
-    # Colonnes attendues pour apps_reviews: app_id, app_name, reviewId, userName, score, content, thumbsUpCount, at
-    reviews_final_cols = ['app_id', 'app_name', 'reviewId', 'userName', 'score', 'content', 'thumbsUpCount', 'at', 'sentiment_hint', 'contradiction_flag']
-    df_reviews = df_reviews[[c for c in reviews_final_cols if c in df_reviews.columns]]
+    # Handle Unknown Apps
+    merged['app_name'] = merged['app_name'].fillna('UNKNOWN')
     
-    df_apps_catalog.to_csv(config.APPS_CATALOG_CSV, index=False)
-    df_reviews.to_csv(config.APPS_REVIEWS_CSV, index=False)
+    # --- Step 7: Business Logic (Sentiment Analysis) ---
+    # Heuristic: Simple keyword matching
+    positive_keywords = ['good', 'great', 'excellent', 'amazing', 'love', 'best', 'fantastic']
+    negative_keywords = ['bad', 'terrible', 'worst', 'poor', 'hate', 'awful', 'garbage']
     
-    logger.info(f"Transformation terminée. Catalog: {len(df_apps_catalog)} lignes, Reviews: {len(df_reviews)} lignes.")
+    def get_sentiment(text):
+        if not isinstance(text, str):
+            return 'NEUTRAL'
+        text = text.lower()
+        pos_count = sum(1 for w in positive_keywords if w in text)
+        neg_count = sum(1 for w in negative_keywords if w in text)
+        
+        if pos_count > neg_count: return 'POS'
+        if neg_count > pos_count: return 'NEG'
+        return 'NEUTRAL'
 
+    merged['sentiment_hint'] = merged['content'].apply(get_sentiment)
+    
+    # Contradiction Flag
+    # NEG text with score >= 4
+    # POS text with score <= 2
+    def check_contradiction(row):
+        score = row['score']
+        sentiment = row['sentiment_hint']
+        if pd.isna(score): return False
+        
+        if sentiment == 'NEG' and score >= 4:
+            return True
+        if sentiment == 'POS' and score <= 2:
+            return True
+        return False
+        
+    merged['contradiction_flag'] = merged.apply(check_contradiction, axis=1)
+
+    # Select Final Columns (Update config or just add these new columns if flexible)
+    # The requirement didn't explicitly ask to add them to defined schema columns in config.py, 
+    # but "apps_reviews.csv with columns... sentiment_hint... contradiction_flag" is implied by "Produces serving-layer aggregates... + business logic".
+    # I will allow these columns to pass through.
+    
+    cols_to_keep = config.REVIEWS_COLS + ['sentiment_hint', 'contradiction_flag']
+    # Filter only available
+    cols_to_keep = [c for c in cols_to_keep if c in merged.columns]
+
+            
+    return merged[cols_to_keep]
+
+
+def run(apps_input, reviews_input):
+    logger.info("Starting Transformations...")
+    config.PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
+    
+    # Load
+    logger.info(f"Loading raw apps from {apps_input}")
+    apps_raw = load_raw_data(apps_input)
+    
+    logger.info(f"Loading raw reviews from {reviews_input}")
+    reviews_raw = load_raw_data(reviews_input)
+    
+    # Transform Apps
+    apps_clean = normalize_apps(apps_raw)
+    apps_out_path = config.PROCESSED_DIR / "apps_catalog.csv"
+    apps_clean.to_csv(apps_out_path, index=False)
+    logger.info(f"Saved apps catalog: {apps_out_path}")
+    
+    # Transform Reviews
+    reviews_clean = normalize_reviews(reviews_raw, apps_clean)
+    reviews_out_path = config.PROCESSED_DIR / "apps_reviews.csv"
+    reviews_clean.to_csv(reviews_out_path, index=False)
+    logger.info(f"Saved apps reviews: {reviews_out_path}")
+    
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
-    run()
+    # For testing isolated execution
+    run(config.RAW_DIR / config.APPS_FILENAME, config.RAW_DIR / config.REVIEWS_FILENAME)

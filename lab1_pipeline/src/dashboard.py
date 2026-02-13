@@ -1,98 +1,405 @@
 import pandas as pd
 import matplotlib.pyplot as plt
-import os
 import logging
+import base64
+from io import BytesIO
 from src import config
 
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def run():
-    """Génère des visualisations à partir des données transformées et des KPIs."""
-    logger.info("Démarrage de la création du dashboard (Matplotlib)...")
-    
-    if not os.path.exists(config.APP_KPIS_CSV) or not os.path.exists(config.APPS_REVIEWS_CSV):
-        logger.error("Fichiers de données manquants. Lancez le pipeline d'abord.")
-        return
 
-    df_kpis = pd.read_csv(config.APP_KPIS_CSV)
-    df_reviews = pd.read_csv(config.APPS_REVIEWS_CSV)
+def fig_to_base64(fig):
+    """Convert a matplotlib figure to a base64-encoded PNG string."""
+    buf = BytesIO()
+    fig.savefig(buf, format='png', dpi=100, bbox_inches='tight', facecolor='#1a1a2e')
+    buf.seek(0)
+    encoded = base64.b64encode(buf.read()).decode('utf-8')
+    buf.close()
+    return encoded
+
+
+def generate_charts():
+    """Generate all charts and return them as base64-encoded strings."""
+    charts = {}
     
-    # 1. Bar Chart: Comparaison des scores moyens par App
-    plt.figure(figsize=(10, 6))
-    plt.bar(df_kpis['app_name'], df_kpis['avg_sentiment_score'], color='skyblue')
-    plt.title('Score Moyen par Application')
-    plt.xlabel('Application')
-    plt.ylabel('Score Moyen')
-    plt.ylim(0, 5)
-    plt.tight_layout()
-    plt.savefig(os.path.join(config.PROCESSED_DIR, "dashboard_scores.png"))
-    plt.close()
+    # Set dark theme for matplotlib
+    plt.style.use('dark_background')
+    plt.rcParams['figure.facecolor'] = '#1a1a2e'
+    plt.rcParams['axes.facecolor'] = '#16213e'
+    plt.rcParams['axes.edgecolor'] = '#e94560'
+    plt.rcParams['axes.labelcolor'] = '#eaeaea'
+    plt.rcParams['text.color'] = '#eaeaea'
+    plt.rcParams['xtick.color'] = '#eaeaea'
+    plt.rcParams['ytick.color'] = '#eaeaea'
+    plt.rcParams['grid.color'] = '#0f3460'
     
-    # 2. Pie Chart: Distribution globale du sentiment
-    sentiment_counts = df_reviews['sentiment_hint'].value_counts()
-    plt.figure(figsize=(8, 8))
-    plt.pie(sentiment_counts, labels=sentiment_counts.index, autopct='%1.1f%%', colors=['green', 'gray', 'red'])
-    plt.title('Distribution Globale du Sentiment')
-    plt.tight_layout()
-    plt.savefig(os.path.join(config.PROCESSED_DIR, "dashboard_sentiment.png"))
-    plt.close()
+    # 1. Daily Metrics Time Series
+    daily_file = config.PROCESSED_DIR / "daily_metrics.csv"
+    if daily_file.exists():
+        df_daily = pd.read_csv(daily_file)
+        if not df_daily.empty and 'date' in df_daily.columns:
+            df_daily['date'] = pd.to_datetime(df_daily['date'])
+            
+            # Plot Volume
+            fig, ax = plt.subplots(figsize=(10, 5))
+            ax.fill_between(df_daily['date'], df_daily['daily_number_of_reviews'], alpha=0.3, color='#e94560')
+            ax.plot(df_daily['date'], df_daily['daily_number_of_reviews'], marker='o', linestyle='-', color='#e94560', linewidth=2)
+            ax.set_title('Daily Review Volume', fontsize=14, fontweight='bold')
+            ax.set_xlabel('Date')
+            ax.set_ylabel('Count')
+            ax.grid(True, alpha=0.3)
+            charts['volume'] = fig_to_base64(fig)
+            plt.close(fig)
+            logger.info("Generated volume chart")
+
+            # Plot Rating Trend
+            fig, ax = plt.subplots(figsize=(10, 5))
+            ax.fill_between(df_daily['date'], df_daily['daily_average_rating'], alpha=0.3, color='#00d9ff')
+            ax.plot(df_daily['date'], df_daily['daily_average_rating'], marker='o', linestyle='-', color='#00d9ff', linewidth=2)
+            ax.set_title('Daily Average Rating', fontsize=14, fontweight='bold')
+            ax.set_xlabel('Date')
+            ax.set_ylabel('Average Score')
+            ax.set_ylim(1, 5)
+            ax.grid(True, alpha=0.3)
+            charts['rating'] = fig_to_base64(fig)
+            plt.close(fig)
+            logger.info("Generated rating chart")
+
+    # 2. Score Distribution
+    reviews_file = config.PROCESSED_DIR / "apps_reviews.csv"
+    if reviews_file.exists():
+        df_reviews = pd.read_csv(reviews_file)
+        if not df_reviews.empty and 'score' in df_reviews.columns:
+            fig, ax = plt.subplots(figsize=(8, 6))
+            colors = ['#e94560', '#ff6b6b', '#feca57', '#48dbfb', '#1dd1a1']
+            score_counts = df_reviews['score'].value_counts().sort_index()
+            bars = ax.bar(score_counts.index, score_counts.values, color=colors[:len(score_counts)], edgecolor='white', linewidth=1.5)
+            ax.set_title('Distribution of Review Scores', fontsize=14, fontweight='bold')
+            ax.set_xlabel('Score')
+            ax.set_ylabel('Frequency')
+            ax.set_xticks(range(1, 6))
+            ax.grid(axis='y', alpha=0.3)
+            charts['distribution'] = fig_to_base64(fig)
+            plt.close(fig)
+            logger.info("Generated distribution chart")
+
+    # 3. App Ranking
+    kpis_file = config.PROCESSED_DIR / "app_kpis.csv"
+    if kpis_file.exists():
+        df_kpis = pd.read_csv(kpis_file)
+        if not df_kpis.empty and 'average_rating' in df_kpis.columns:
+            df_sorted = df_kpis.sort_values('average_rating', ascending=True)
+            
+            fig, ax = plt.subplots(figsize=(10, 6))
+            colors = ['#1dd1a1' if r >= 4 else '#feca57' if r >= 3 else '#e94560' for r in df_sorted['average_rating']]
+            bars = ax.barh(df_sorted['app_name'], df_sorted['average_rating'], color=colors, edgecolor='white', linewidth=1.5)
+            ax.set_xlabel('Average Rating')
+            ax.set_title('App Ranking by Average Rating', fontsize=14, fontweight='bold')
+            ax.set_xlim(0, 5)
+            ax.grid(axis='x', alpha=0.3)
+            charts['ranking'] = fig_to_base64(fig)
+            plt.close(fig)
+            logger.info("Generated ranking chart")
     
-    # 3. Scatter Plot: Score vs Likes
-    plt.figure(figsize=(10, 6))
-    for app in df_reviews['app_name'].unique():
-        sub = df_reviews[df_reviews['app_name'] == app]
-        plt.scatter(sub['score'], sub['thumbsUpCount'], label=app, alpha=0.5)
-    plt.title('Score vs Nombre de Likes par Avis')
-    plt.xlabel('Note')
-    plt.ylabel('Likes')
-    plt.legend()
-    plt.tight_layout()
-    plt.savefig(os.path.join(config.PROCESSED_DIR, "dashboard_scatter.png"))
-    plt.close()
+    return charts
+
+
+def generate_html(charts):
+    """Generate a premium HTML dashboard with embedded charts."""
     
-    # 4. Génération du fichier HTML
-    html_content = f"""
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>App Reviews Dashboard</title>
-        <style>
-            body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 20px; background-color: #f4f7f6; }}
-            h1 {{ color: #333; text-align: center; }}
-            .container {{ display: flex; flex-wrap: wrap; justify-content: center; gap: 20px; }}
-            .card {{ background: white; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); padding: 15px; width: 45%; min-width: 400px; }}
-            img {{ max-width: 100%; border-radius: 4px; }}
-            .full-width {{ width: 92%; }}
-        </style>
-    </head>
-    <body>
-        <h1>Analyse des Avis Applications AI</h1>
-        <div class="container">
-            <div class="card">
-                <h3>Scores Moyens</h3>
-                <img src="dashboard_scores.png" alt="Average Scores">
+    # Load KPIs for summary cards
+    kpis_file = config.PROCESSED_DIR / "app_kpis.csv"
+    kpi_cards = ""
+    if kpis_file.exists():
+        df_kpis = pd.read_csv(kpis_file)
+        if not df_kpis.empty:
+            row = df_kpis.iloc[0]
+            kpi_cards = f"""
+            <div class="kpi-grid">
+                <div class="kpi-card">
+                    <div class="kpi-value">{int(row.get('number_of_reviews', 0)):,}</div>
+                    <div class="kpi-label">Total Reviews</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-value">{row.get('average_rating', 0):.2f}</div>
+                    <div class="kpi-label">Average Rating</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-value">{row.get('pct_low_rating_reviews', 0):.1f}%</div>
+                    <div class="kpi-label">Low Rating %</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-value">{row.get('app_name', 'N/A')}</div>
+                    <div class="kpi-label">App Name</div>
+                </div>
             </div>
-            <div class="card">
-                <h3>Distribution du Sentiment</h3>
-                <img src="dashboard_sentiment.png" alt="Sentiment Distribution">
-            </div>
-            <div class="card full-width">
-                <h3>Avis : Score vs Likes</h3>
-                <img src="dashboard_scatter.png" alt="Score vs Likes">
-            </div>
+            """
+    
+    # Build chart sections
+    chart_sections = ""
+    if 'volume' in charts:
+        chart_sections += f'''
+        <div class="chart-card">
+            <h3>📈 Daily Review Volume</h3>
+            <img src="data:image/png;base64,{charts['volume']}" alt="Daily Volume Chart">
         </div>
-    </body>
-    </html>
-    """
+        '''
+    if 'rating' in charts:
+        chart_sections += f'''
+        <div class="chart-card">
+            <h3>⭐ Daily Average Rating</h3>
+            <img src="data:image/png;base64,{charts['rating']}" alt="Daily Rating Chart">
+        </div>
+        '''
+    if 'distribution' in charts:
+        chart_sections += f'''
+        <div class="chart-card">
+            <h3>📊 Score Distribution</h3>
+            <img src="data:image/png;base64,{charts['distribution']}" alt="Score Distribution Chart">
+        </div>
+        '''
+    if 'ranking' in charts:
+        chart_sections += f'''
+        <div class="chart-card full-width">
+            <h3>🏆 App Ranking</h3>
+            <img src="data:image/png;base64,{charts['ranking']}" alt="App Ranking Chart">
+        </div>
+        '''
     
-    html_path = os.path.join(config.PROCESSED_DIR, "dashboard.html")
-    with open(html_path, "w", encoding="utf-8") as f:
-        f.write(html_content)
+    html = f'''<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>App Reviews Dashboard</title>
+    <style>
+        * {{
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }}
         
-    logger.info(f"Dashboard généré. Images et HTML sauvegardés dans {config.PROCESSED_DIR}")
+        body {{
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            min-height: 100vh;
+            color: #eaeaea;
+            padding: 2rem;
+        }}
+        
+        .container {{
+            max-width: 1400px;
+            margin: 0 auto;
+        }}
+        
+        header {{
+            text-align: center;
+            margin-bottom: 3rem;
+        }}
+        
+        h1 {{
+            font-size: 2.5rem;
+            background: linear-gradient(90deg, #e94560, #00d9ff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 0.5rem;
+        }}
+        
+        .subtitle {{
+            color: #8892b0;
+            font-size: 1.1rem;
+        }}
+        
+        .kpi-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 3rem;
+        }}
+        
+        .kpi-card {{
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 1.5rem;
+            text-align: center;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }}
+        
+        .kpi-card:hover {{
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(233, 69, 96, 0.2);
+        }}
+        
+        .kpi-value {{
+            font-size: 2rem;
+            font-weight: bold;
+            color: #e94560;
+            margin-bottom: 0.5rem;
+        }}
+        
+        .kpi-label {{
+            color: #8892b0;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }}
+        
+        .charts-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
+            gap: 2rem;
+        }}
+        
+        .chart-card {{
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 1.5rem;
+            transition: transform 0.3s ease;
+        }}
+        
+        .chart-card:hover {{
+            transform: translateY(-3px);
+        }}
+        
+        .chart-card.full-width {{
+            grid-column: 1 / -1;
+        }}
+        
+        .chart-card h3 {{
+            color: #00d9ff;
+            margin-bottom: 1rem;
+            font-size: 1.2rem;
+        }}
+        
+        .chart-card img {{
+            width: 100%;
+            height: auto;
+            border-radius: 8px;
+        }}
+        
+        footer {{
+            text-align: center;
+            margin-top: 3rem;
+            color: #8892b0;
+            font-size: 0.9rem;
+        }}
+        
+        @media (max-width: 600px) {{
+            .charts-grid {{
+                grid-template-columns: 1fr;
+            }}
+            
+            h1 {{
+                font-size: 1.8rem;
+            }}
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📱 App Reviews Dashboard</h1>
+            <p class="subtitle">Real-time analytics and insights from user reviews</p>
+        </header>
+        
+        {kpi_cards}
+        
+        <div class="charts-grid">
+            {chart_sections}
+        </div>
+        
+        <footer>
+            <p>Generated by Data Pipeline • Powered by Python & Matplotlib</p>
+        </footer>
+    </div>
+</body>
+</html>'''
+    
+    return html
+
+
+def run():
+    logger.info("Generating Dashboard...")
+    
+    # Generate charts as base64
+    charts = generate_charts()
+    
+    if not charts:
+        logger.warning("No charts generated. Ensure processed data exists.")
+        return
+    
+    # Generate HTML
+    html_content = generate_html(charts)
+    
+    # Save HTML file
+    output_path = config.PROCESSED_DIR / "dashboard.html"
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write(html_content)
+    
+    logger.info(f"Saved dashboard: {output_path}")
+    
+    # Also save individual PNG files for backwards compatibility
+    daily_file = config.PROCESSED_DIR / "daily_metrics.csv"
+    if daily_file.exists():
+        df_daily = pd.read_csv(daily_file)
+        if not df_daily.empty and 'date' in df_daily.columns:
+            df_daily['date'] = pd.to_datetime(df_daily['date'])
+            
+            plt.figure(figsize=(10, 5))
+            plt.plot(df_daily['date'], df_daily['daily_number_of_reviews'], marker='o', linestyle='-')
+            plt.title('Daily Review Volume')
+            plt.xlabel('Date')
+            plt.ylabel('Count')
+            plt.grid(True)
+            plt.tight_layout()
+            plt.savefig(config.PROCESSED_DIR / "dashboard_daily_volume.png")
+            plt.close()
+
+            plt.figure(figsize=(10, 5))
+            plt.plot(df_daily['date'], df_daily['daily_average_rating'], marker='o', linestyle='-', color='orange')
+            plt.title('Daily Average Rating')
+            plt.xlabel('Date')
+            plt.ylabel('Average Score')
+            plt.grid(True)
+            plt.tight_layout()
+            plt.savefig(config.PROCESSED_DIR / "dashboard_daily_rating.png")
+            plt.close()
+
+    reviews_file = config.PROCESSED_DIR / "apps_reviews.csv"
+    if reviews_file.exists():
+        df_reviews = pd.read_csv(reviews_file)
+        if not df_reviews.empty and 'score' in df_reviews.columns:
+            plt.figure(figsize=(8, 6))
+            df_reviews['score'].hist(bins=5, range=(1, 6), edgecolor='black')
+            plt.title('Distribution of Review Scores')
+            plt.xlabel('Score')
+            plt.ylabel('Frequency')
+            plt.xticks(range(1, 6))
+            plt.grid(axis='y', alpha=0.75)
+            plt.savefig(config.PROCESSED_DIR / "dashboard_score_dist.png")
+            plt.close()
+
+    kpis_file = config.PROCESSED_DIR / "app_kpis.csv"
+    if kpis_file.exists():
+        df_kpis = pd.read_csv(kpis_file)
+        if not df_kpis.empty and 'average_rating' in df_kpis.columns:
+            df_sorted = df_kpis.sort_values('average_rating', ascending=True)
+            plt.figure(figsize=(10, 6))
+            colors = ['green' if r >= 4 else 'orange' if r >= 3 else 'red' for r in df_sorted['average_rating']]
+            plt.barh(df_sorted['app_name'], df_sorted['average_rating'], color=colors)
+            plt.xlabel('Average Rating')
+            plt.title('App Ranking by Average Rating')
+            plt.xlim(0, 5)
+            plt.tight_layout()
+            plt.savefig(config.PROCESSED_DIR / "dashboard_app_ranking.png")
+            plt.close()
+
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
     run()

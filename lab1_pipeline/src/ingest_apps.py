@@ -1,41 +1,39 @@
 import json
 import logging
-import os
 from google_play_scraper import app
 from src import config
 
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def run(output_file=None):
-    """Récupère les métadonnées des applications et les sauvegarde en JSONL."""
+    """
+    Fetches raw app metadata and saves it as JSON.
+    """
     if output_file is None:
-        output_file = config.APPS_INPUT
+        output_file = config.RAW_DIR / config.APPS_FILENAME
+    
+    app_id = config.TARGET_APP_ID
+    logger.info(f"Fetching metadata for app: {app_id}")
+    
+    try:
+        result = app(
+            app_id,
+            lang='en', # defaults to 'en'
+            country='us' # defaults to 'us'
+        )
         
-    output_path = os.path.join(config.RAW_DIR, output_file)
-    os.makedirs(config.RAW_DIR, exist_ok=True)
-    
-    # Vide le fichier au début
-    with open(output_path, 'w', encoding='utf-8') as f:
-        pass
-
-    logger.info(f"Début de l'ingestion des apps vers {output_path}...")
-    
-    count = 0
-    for app_id in config.APP_IDS:
-        try:
-            logger.info(f"Scraping metadata pour {app_id}...")
-            result = app(app_id)
+        # Ensure directory exists
+        config.RAW_DIR.mkdir(parents=True, exist_ok=True)
+        
+        with open(output_file, "w", encoding="utf-8") as f:
+            json.dump(result, f, indent=2, default=str)
             
-            # Append immediately
-            with open(output_path, 'a', encoding='utf-8') as f:
-                f.write(json.dumps(result, ensure_ascii=False, default=str) + '\n')
-            
-            count += 1
-        except Exception as e:
-            logger.error(f"Erreur lors du scraping de {app_id}: {e}")
-            
-    logger.info(f"Ingestion des apps terminée. {count} apps récupérées.")
+        logger.info(f"Saved app metadata to {output_file}")
+        
+    except Exception as e:
+        logger.error(f"Failed to ingest app data: {e}")
+        # In a real pipeline, we might raise e, but for this lab, logging is good.
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
     run()
