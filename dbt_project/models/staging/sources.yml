@@ -1,0 +1,16 @@
+
+version: 2
+
+sources:
+  - name: playstore
+    schema: main
+    description: "Raw data from Google Play Store"
+    tables:
+      - name: apps_raw
+        description: "Raw app data"
+        external:
+          location: "c:/Users/mosta/Desktop/Data engineering/data/raw/apps_raw.json"
+      - name: reviews_raw
+        description: "Raw reviews data"
+        external:
+          location: "c:/Users/mosta/Desktop/Data engineering/data/raw/reviews_raw.json"

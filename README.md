@@ -35,16 +35,16 @@ To stress test the pipeline with provided CSV datasets, use the `--reviews_input
 Examples:
 ```bash
 # Batch 2
-python -m src.main --reviews_input "note_taking_ai_reviews_batch2.csv"
+python -m src.main --reviews_input "data/raw/note_taking_ai_reviews_batch2.csv"
 
 # Schema Drift
-python -m src.main --reviews_input "note_taking_ai_reviews_schema_drift.csv"
+python -m src.main --reviews_input "data/raw/note_taking_ai_reviews_schema_drift.csv"
 
 # Dirty Data
-python -m src.main --reviews_input "note_taking_ai_reviews_dirty.csv"
+python -m src.main --reviews_input "data/raw/note_taking_ai_reviews_dirty.csv"
 
 # Updated Apps Metadata
-python -m src.main --reviews_input "note_taking_ai_reviews_batch2.csv" --apps_input "note_taking_ai_apps_updated.csv"
+python -m src.main --reviews_input "data/raw/note_taking_ai_reviews_batch2.csv" --apps_input "data/raw/note_taking_ai_apps_updated.csv"
 ```
 
 ### Stress Test Notes

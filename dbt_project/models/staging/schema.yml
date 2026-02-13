@@ -1,0 +1,32 @@
+
+version: 2
+
+models:
+  - name: stg_playstore_apps
+    description: "Staged app data"
+    columns:
+      - name: app_id
+        description: "Primary key for apps"
+        tests:
+          - unique
+          - not_null
+      - name: app_name
+        description: "Name of the application"
+        tests:
+          - not_null
+
+  - name: stg_playstore_reviews
+    description: "Staged review data"
+    columns:
+      - name: review_id
+        description: "Primary key for reviews"
+        tests:
+          - unique
+          - not_null
+      - name: app_id
+        description: "Foreign key to apps"
+        tests:
+          - not_null
+          - relationships:
+              to: ref('stg_playstore_apps')
+              field: app_id

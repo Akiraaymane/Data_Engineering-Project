@@ -12,11 +12,12 @@ APPS_FILENAME = "apps_raw.json"
 REVIEWS_FILENAME = "reviews_raw.jsonl"
 
 # Stress Test Defaults (can be overridden)
+# Stress Test Defaults (can be overridden)
 STRESS_TEST_FILES = {
-    "batch2": "note_taking_ai_reviews_batch2.csv",
-    "schema_drift": "note_taking_ai_reviews_schema_drift.csv",
-    "dirty": "note_taking_ai_reviews_dirty.csv",
-    "apps_updated": "note_taking_ai_apps_updated.csv"
+    "batch2": str(RAW_DIR / "note_taking_ai_reviews_batch2.csv"),
+    "schema_drift": str(RAW_DIR / "note_taking_ai_reviews_schema_drift.csv"),
+    "dirty": str(RAW_DIR / "note_taking_ai_reviews_dirty.csv"),
+    "apps_updated": str(RAW_DIR / "note_taking_ai_apps_updated.csv")
 }
 
 # Target Package Name (for scraping)

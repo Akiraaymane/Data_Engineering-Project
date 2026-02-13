@@ -3,4 +3,6 @@ numpy
 python-dateutil
 google-play-scraper
 plotly
-
+duckdb
+dbt-core
+dbt-duckdb
