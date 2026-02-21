@@ -11,15 +11,17 @@ renamed as (
         genre as category_name,
         developerId as developer_id,
         developer as developer_name,
+        developerEmail as developer_email,
+        developerWebsite as developer_website,
         
         -- Metrics
-        score as rating,
-        reviews as reviews_count,
-        installs as installs_range,
+        score as catalog_rating,
+        reviews as ratings_count,
+        installs,
         minInstalls as min_installs,
         realInstalls as real_installs,
         price,
-        free as is_free,
+        not free as is_paid,
         currency,
         
         -- Details

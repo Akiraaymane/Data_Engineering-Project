@@ -6,7 +6,7 @@
       target_schema='main',
       unique_key='app_id',
       strategy='check',
-      check_cols=['rating', 'reviews_count', 'price', 'current_version', 'last_updated'],
+      check_cols=['catalog_rating', 'ratings_count', 'price', 'installs'],
     )
 }}
 

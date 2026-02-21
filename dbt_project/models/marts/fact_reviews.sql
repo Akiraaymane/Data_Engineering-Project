@@ -10,25 +10,30 @@ with reviews as (
     select * from {{ ref('stg_playstore_reviews') }}
 ),
 apps as (
-    select * from {{ ref('dim_apps') }}
+    select app_key, app_id, developer_key from {{ ref('dim_apps') }}
 ),
 dates as (
-    select * from {{ ref('dim_date') }}
+    select date_key, date from {{ ref('dim_date') }}
 )
 select
-    md5(cast(r.review_id as varchar)) as review_key,
-    r.review_id,
-    r.rating,
-    r.thumbs_up_count,
-    r.review_text,
-    
+    row_number() over (order by r.review_id)   as review_id,
     a.app_key,
-    coalesce(d.date_key, -1) as review_date_key
-    
+    a.developer_key,
+    d.date_key,
+
+    cast(r.rating as integer)           as rating,
+    cast(r.thumbs_up_count as integer)  as thumbs_up_count,
+    r.review_text,
+    r.review_version
+
 from reviews r
-left join apps a on r.app_id = a.app_id
-left join dates d on cast(r.review_timestamp as date) = d.date_day
+inner join apps  a on r.app_id = a.app_id
+inner join dates d on cast(r.review_timestamp as date) = d.date
 
 {% if is_incremental() %}
-  where cast(r.review_timestamp as date) > (select max(d.date_day) from {{ this }} f join {{ ref('dim_date') }} d on f.review_date_key = d.date_key)
+  where cast(r.review_timestamp as date) > (
+    select max(dt.date)
+    from {{ this }} f
+    join {{ ref('dim_date') }} dt on f.date_key = dt.date_key
+  )
 {% endif %}

@@ -1,0 +1,92 @@
+
+version: 2
+
+models:
+  - name: dim_apps
+    description: "App dimension — one row per app, integer surrogate key"
+    columns:
+      - name: app_key
+        description: "Surrogate PK (integer, row_number)"
+        tests:
+          - unique
+          - not_null
+      - name: app_id
+        tests:
+          - not_null
+      - name: developer_key
+        description: "FK -> dim_developers"
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_developers')
+              field: developer_key
+      - name: category_key
+        description: "FK -> dim_categories"
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_categories')
+              field: category_key
+
+  - name: dim_developers
+    description: "Developer dimension — one row per unique developer"
+    columns:
+      - name: developer_key
+        description: "Surrogate PK (integer, row_number)"
+        tests:
+          - unique
+          - not_null
+
+  - name: dim_categories
+    description: "Category dimension — one row per unique category"
+    columns:
+      - name: category_key
+        description: "Surrogate PK (integer, row_number)"
+        tests:
+          - unique
+          - not_null
+
+  - name: dim_date
+    description: "Date dimension — YYYYMMDD integer key, full date attributes"
+    columns:
+      - name: date_key
+        description: "Surrogate PK (integer YYYYMMDD)"
+        tests:
+          - unique
+          - not_null
+
+  - name: fact_reviews
+    description: "Fact table — grain: one row per review per app per date"
+    columns:
+      - name: review_id
+        description: "Natural PK (integer)"
+        tests:
+          - unique
+          - not_null
+      - name: app_key
+        description: "FK -> dim_apps"
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_apps')
+              field: app_key
+      - name: developer_key
+        description: "FK -> dim_developers"
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_developers')
+              field: developer_key
+      - name: date_key
+        description: "FK -> dim_date"
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_date')
+              field: date_key
+      - name: rating
+        description: "App rating (1-5)"
+        tests:
+          - not_null
+          - accepted_values:
+              values: [1, 2, 3, 4, 5]

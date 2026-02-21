@@ -15,7 +15,7 @@ renamed as (
         content as review_text,
         score as rating,
         thumbsUpCount as thumbs_up_count,
-        reviewCreatedVersion as review_created_version,
+        reviewCreatedVersion as review_version,
         -- 'at' is usually a timestamp string, need to handle parsing if json reader didn't auto-detect
         try_cast("at" as timestamp) as review_timestamp,
         replyContent as reply_content,
