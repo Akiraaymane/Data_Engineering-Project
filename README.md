@@ -1,4 +1,43 @@
+# Data Engineering Labs
+
+## Authors
+- **EL ANSARI Mostapha**
+- **Dhimen Aymane**
+
+---
+
+# Lab 2: dbt & DuckDB — Google Play Analytics
+
+## Overview
+Modern data pipeline built with **dbt** and **DuckDB**, modeling Google Play Store data into a Kimball-style star schema.
+
+## Star Schema
+- **Fact**: `fact_reviews` — one row per review (incremental load)
+- **Dimensions**: `dim_apps`, `dim_developers`, `dim_categories`, `dim_date`
+- All joins via **integer surrogate keys** (`row_number()`)
+- SCD Type 2 on `dim_apps` via dbt snapshot (`apps_snapshot`)
+
+## Running the Pipeline
+```bash
+# Build all models
+dbt run --full-refresh
+
+# Run all 30 schema tests
+dbt test
+
+# Run SCD Type 2 snapshot
+dbt snapshot
+```
+
+## Test Coverage (30 tests)
+- `unique` + `not_null` on all surrogate PKs
+- `not_null` + `relationships` on all FKs in `fact_reviews` and `dim_apps`
+- `accepted_values [1–5]` on `fact_reviews.rating`
+
+---
+
 # Lab 1: Python Data Pipeline
+
 
 ## Overview
 End-to-end Python pipeline that ingests Google Play data, transforms it, and produces serving-layer aggregates and a dashboard.
